@@ -5,17 +5,18 @@ Created on Wed Aug  3 14:44:53 2022
 @author: jason
 """
 from selenium import webdriver
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.common.by import By
 import time
 import os.path
 import pandas as pd
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 # switch the handle window from main page to question page
 # click the question url to dive into question
-def Into_QA(handle, page_index):
+def Into_QA(handle, page_index, parent_handle):
     '''
     switch the handle window from main page to question page
     click the question url to dive into question
@@ -28,12 +29,12 @@ def Into_QA(handle, page_index):
     element = handle.find_element(By.XPATH, page_url )
     print('entering page ',page_index)
     element.click()
-    time.sleep(3)  
+    time.sleep(2)  
     # window_handles[1] is a second window
     handle.switch_to.window(handle.window_handles[1])
 
 # 将handle从子页面切换回主页面,删掉handler释放内存
-def out_QA(handle):
+def out_QA(handle ,parent_handle):
     '''
     close question page and move to parent page
     '''
@@ -52,7 +53,7 @@ def transText(eList):
     return tmp
 
 PAUSE_TIME =1.2
-def data_acquire():
+def data_acquire( wd):
     '''
     acquire data from answer page.
     question: the string of question
@@ -88,7 +89,7 @@ def writeData(dataframe, index, space):
     
     
 # sort question dispaly in recent order
-def switch_sorting(page_index):
+def switch_sorting(page_index ,wd):
     '''
     select the recent sort method
     don't need page_index only when to report bug
@@ -109,7 +110,7 @@ def switch_sorting(page_index):
         print('no answer',page_index)
         pass
         
-def hasAnswered(page_index):
+def hasAnswered(page_index, wd, parent_handle):
     '''
     Determine if the question has an answer
     '''
@@ -127,7 +128,7 @@ def hasAnswered(page_index):
         return False
 
 
-def ScrolltoCertain(page_index):
+def ScrolltoCertain(page_index , wd ,parent_handle):
     '''
     to avoid start from zero, scroll down to desire part
     page_index: which answer you want start, like if I want to start from 50th question, page_index=50,
@@ -147,7 +148,7 @@ def ScrolltoCertain(page_index):
             
 
 PAUSE_TIME =1.0
-def data_to_df():
+def data_to_df( wd):
     '''
     this is a substitude function of data_acquire and to_dataframe
     Here I combine the two steps into one
@@ -206,14 +207,10 @@ def data_to_df():
     df['content'] = df['content'].apply(lambda x: x.replace('\n',''))
     return df
 
+def main(url,driver):
 
-
-if __name__ == "__main__":
-    wd = webdriver.Chrome(service=Service(r'D:\chromedriver_win32\chromedriver.exe'))
-
+    wd = driver
     # Select three Quora space to get all the answers and questions
-    
-    url = 'https://bitcoin1.quora.com/questions'
     
     wd.get(url)
     space_name = url.split(sep='.')[0].split('//')[1]
@@ -227,25 +224,25 @@ if __name__ == "__main__":
     stop_page = []
     
     # if you want to start from certain page, use this function to scroll down to desire page
-    ScrolltoCertain(page_index)
+    # ScrolltoCertain(page_index,wd,parent_handle)
     
     flag = True
     while (flag):
-        if hasAnswered(page_index) == False or page_index in stop_page:
+        if hasAnswered(page_index,wd,parent_handle) == False or page_index in stop_page:
             page_index +=1
             print('leave one unanswered question ',page_index)
             continue
         else:
             try:
     
-                Into_QA(wd, page_index)
+                Into_QA(wd, page_index,parent_handle)
             except:
                 print("Error in entering into %d",page_index)
-                ScrolltoCertain(page_index)
+                # ScrolltoCertain(page_index,wd,parent_handle)
     #             flag = False
                 page_index +=1
                 continue
-            switch_sorting(page_index)
+            switch_sorting(page_index,wd)
             # if there is hidden content, show all 
             fullContent = wd.find_elements(By.XPATH,'//*[@id="mainContent"]/div/div[2]/div[*]/div/div/div/div/div/div/div/div/div[1]/div[*]/div/div/div[2]/div[1]/div/div/div/span/div/div/div/button/div/div/div')
 
@@ -255,17 +252,52 @@ if __name__ == "__main__":
                 i.click()
     
             try:
-                result = data_to_df()
+                result = data_to_df(wd)
     #         ques,author,answer,upvote,answerb = data_acquire()  # retrieve data
     #         result = to_dataframe(ques,author,answer,upvote,answerb) #make a dataframe
             except:
                 print("Error in retrieve a piece of data",page_index)
                 page_index +=1
-                out_QA(wd)
+                out_QA(wd,parent_handle)
                 continue
             print(result)
             writeData(result,page_index,space_name) #store
-            out_QA(wd)
+            out_QA(wd,parent_handle)
     
             page_index = page_index+1
+    return 
 
+
+if __name__ == "__main__":
+    url = 'https://cryptocurrency.quora.com/questions'
+    url2 = 'https://softskillsandautism.quora.com/questions'
+    url3 = 'https://softwareengineeringexperiences.quora.com/questions'
+    url4 = 'https://thedoctorsroom.quora.com/questions'
+   
+    wd1 = webdriver.Chrome(service=Service(r'D:\chromedriver_win32\chromedriver.exe'))
+    wd2 = webdriver.Chrome(service=Service(r'D:\chromedriver_win32\chromedriver.exe'))
+    wd3 = webdriver.Chrome(service=Service(r'D:\chromedriver_win32\chromedriver.exe'))
+    wd4 = webdriver.Chrome(service=Service(r'D:\chromedriver_win32\chromedriver.exe'))
+    # main(url=url)    
+       
+    threads = []
+    # use multi thread to process, save time
+    t1 = threading.Thread(target=main,args=(url,wd1))
+    threads.append(t1)
+    t1.start()
+    t2 = threading.Thread(target=main,args=(url2,wd2))
+    threads.append(t2)
+    t2.start()
+    t3 = threading.Thread(target=main,args=(url3,wd3))
+    threads.append(t3)
+    t3.start()
+    t4 = threading.Thread(target=main,args=(url4,wd4))
+    threads.append(t4)
+    t4.start()
+    
+    #haved realized Threadpool
+    # with ThreadPoolExecutor(max_workers=3) as executor:
+    #     executor.map(get_handles, files, drivers)
+    print('Better call saul is awesome!')
+    #testing
+    # main(url2,wd2)
